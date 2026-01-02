@@ -1,5 +1,6 @@
 export interface Scrap {
   id: string;
+  groupId?: string; // Links to a Group
   content: string; // The user's rough notes
   image?: string; // Base64 image string if user uploads a screenshot/photo
   url?: string; // Optional link to the article
@@ -17,6 +18,17 @@ export interface Scrap {
   clipPath: string; // To store the "torn" shape
 }
 
+export interface Group {
+  id: string;
+  title: string;
+  position: { x: number; y: number };
+  zIndex: number;
+  isCollapsed: boolean;
+  color: string;
+  width: number; // For the container size when expanded
+  height: number;
+}
+
 export interface IdeaSynthesis {
   title: string;
   summary: string;
@@ -26,7 +38,8 @@ export interface IdeaSynthesis {
 export enum AppMode {
   BOARD = 'BOARD',
   REVIEW = 'REVIEW',
-  SYNTHESIS = 'SYNTHESIS'
+  SYNTHESIS = 'SYNTHESIS',
+  SELECT = 'SELECT'
 }
 
 export const COLORS = [
