@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { ExternalLink, Trash2, GripHorizontal, ArrowDownRight, CheckCircle2, LogOut } from 'lucide-react';
 import { Scrap } from '../types';
+import { isValidUrl } from '../utils';
 
 export type ScrapDisplayMode = 'BOARD' | 'REVIEW' | 'GROUPED' | 'SELECT';
 
@@ -187,7 +188,8 @@ export const ScrapNote: React.FC<ScrapNoteProps> = ({
             <span></span> 
             
             <div className="flex gap-1.5 z-10">
-                {scrap.url && (
+                {/* Security fix: Only render link if URL is valid http/https to prevent XSS */}
+                {scrap.url && isValidUrl(scrap.url) && (
                     <a 
                         href={scrap.url} 
                         target="_blank" 

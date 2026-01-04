@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, Trash2, X } from 'lucide-react';
 import { Scrap } from '../types';
+import { isValidUrl } from '../utils';
 
 interface ReviewDeckProps {
   scraps: Scrap[];
@@ -30,6 +31,18 @@ export const ReviewDeck: React.FC<ReviewDeckProps> = ({ scraps, onKeep, onToss, 
 
   if (!currentScrap) return null;
 
+  // Safe hostname extraction
+  const getHostname = (url: string) => {
+    try {
+      if (!isValidUrl(url)) return null;
+      return new URL(url).hostname;
+    } catch {
+      return null;
+    }
+  };
+
+  const hostname = currentScrap.url ? getHostname(currentScrap.url) : null;
+
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center backdrop-blur-sm">
       <div className="text-white mb-8 text-center max-w-md px-4">
@@ -57,9 +70,9 @@ export const ReviewDeck: React.FC<ReviewDeckProps> = ({ scraps, onKeep, onToss, 
              <div className="flex-1 overflow-y-auto font-['Zen_Kurenaido'] font-bold text-2xl leading-relaxed">
                 {currentScrap.content}
              </div>
-             {currentScrap.url && (
+             {hostname && (
                  <div className="mt-4 pt-2 border-t border-black/10 text-xs font-mono truncate text-gray-500">
-                    Source: {new URL(currentScrap.url).hostname}
+                    Source: {hostname}
                  </div>
              )}
           </motion.div>

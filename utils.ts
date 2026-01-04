@@ -58,3 +58,13 @@ export const needsReview = (lastReviewedAt: number) => {
   const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
   return Date.now() - lastReviewedAt > THREE_DAYS_MS;
 };
+
+// Security: Validate URL to prevent XSS (javascript: protocol)
+export const isValidUrl = (string: string) => {
+  try {
+    const url = new URL(string);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch (_) {
+    return false;
+  }
+};

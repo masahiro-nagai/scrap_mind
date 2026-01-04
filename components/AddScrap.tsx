@@ -40,6 +40,19 @@ export const AddScrap: React.FC<AddScrapProps> = ({ onAdd }) => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Security/Performance Check: Limit file size to 800KB to preserve LocalStorage
+      // LocalStorage has a limit of ~5MB. Large images will crash the app.
+      if (file.size > 800 * 1024) {
+        alert("画像サイズが大きすぎます。800KB以下の画像を選択してください。\n(LocalStorageの容量制限のため)");
+        return;
+      }
+      
+      // Validation: Ensure it's an image
+      if (!file.type.startsWith('image/')) {
+        alert("画像ファイルのみアップロード可能です。");
+        return;
+      }
+
       const reader = new FileReader();
       reader.onloadend = () => {
         setImage(reader.result as string);
@@ -124,7 +137,7 @@ export const AddScrap: React.FC<AddScrapProps> = ({ onAdd }) => {
                             className="w-full h-16 border-2 border-dashed border-gray-400/50 rounded-lg flex flex-col items-center justify-center text-gray-500 hover:border-gray-600 hover:text-gray-700 transition-colors bg-white/30"
                         >
                             <ImageIcon size={20} />
-                            <span className="text-xs font-['Zen_Maru_Gothic'] mt-1">画像を貼り付ける</span>
+                            <span className="text-xs font-['Zen_Maru_Gothic'] mt-1">画像を貼り付ける (Max 800KB)</span>
                         </button>
                     ) : (
                         <div className="relative w-full h-32 bg-gray-100 rounded-lg overflow-hidden border border-gray-200">

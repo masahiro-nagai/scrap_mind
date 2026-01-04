@@ -16,20 +16,22 @@ export const synthesizeScraps = async (scraps: Scrap[]): Promise<IdeaSynthesis |
 
   if (scraps.length === 0) return null;
 
-  const scrapTexts = scraps.map(s => {
-    const dateStr = new Date(s.createdAt).toISOString();
-    const tagsStr = s.tags && s.tags.length > 0 ? `[Tags: ${s.tags.join(', ')}]` : '';
-    return `- [Date: ${dateStr}] ${tagsStr} ${s.content} (Source: ${s.url || 'None'})`;
-  }).join('\n');
+  // Structure data as JSON to prevent prompt injection issues where user content leaks into instructions
+  const scrapsData = scraps.map(s => ({
+    date: new Date(s.createdAt).toISOString(),
+    tags: s.tags || [],
+    content: s.content,
+    source: s.url || null
+  }));
 
   const prompt = `
     あなたは、ユーザーの雑多な「スクラップブック」のメモを統合し、新しいアイデアを生み出すのを手助けするインテリジェントなアシスタントです。
     
-    以下はユーザーのメモ（スクラップ）です。各メモには作成日時とタグ情報が含まれています。
+    以下はユーザーのメモ（スクラップ）のJSONデータです。
     時系列やタグの関連性も考慮して分析を行ってください。
     
-    メモ一覧:
-    ${scrapTexts}
+    ユーザーデータ(JSON):
+    ${JSON.stringify(scrapsData, null, 2)}
 
     これらのスクラップを分析し、隠れたつながりや、それらを結びつける新しいプロジェクト/アイデアの可能性を見つけてください。
     もし内容がランダムであれば、哲学的なテーマを見出してください。
