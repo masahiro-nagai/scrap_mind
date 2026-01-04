@@ -9,6 +9,7 @@ interface ScrapNoteProps {
   scrap: Scrap;
   displayMode?: ScrapDisplayMode;
   isSelected?: boolean;
+  scale?: number; // Zoom scale for coordinate correction
   onUpdatePosition?: (id: string, x: number, y: number) => void;
   onUpdateSize?: (id: string, width: number, height: number) => void;
   onDelete?: (id: string) => void; // Permanently delete
@@ -21,6 +22,7 @@ export const ScrapNote: React.FC<ScrapNoteProps> = ({
   scrap, 
   displayMode = 'BOARD',
   isSelected = false,
+  scale = 1,
   onUpdatePosition, 
   onUpdateSize,
   onDelete, 
@@ -47,8 +49,9 @@ export const ScrapNote: React.FC<ScrapNoteProps> = ({
       moveEvent.stopPropagation();
       moveEvent.preventDefault();
       
-      const deltaX = moveEvent.clientX - startX;
-      const deltaY = moveEvent.clientY - startY;
+      // Adjust delta by current zoom scale
+      const deltaX = (moveEvent.clientX - startX) / scale;
+      const deltaY = (moveEvent.clientY - startY) / scale;
       
       const newWidth = Math.max(150, startWidth + deltaX);
       const newHeight = Math.max(60, startHeight + deltaY);
@@ -76,10 +79,11 @@ export const ScrapNote: React.FC<ScrapNoteProps> = ({
     }
   };
 
+  // Removed transition-all to prevent drag lag
   const containerClasses = `
-    flex flex-col p-3 shadow-lg text-gray-800 ${scrap.color} transition-all hover:shadow-2xl group
+    flex flex-col p-3 shadow-lg text-gray-800 ${scrap.color} transition-shadow hover:shadow-2xl group
     ${isGrouped ? 'relative mb-4 mx-auto' : 'absolute'}
-    ${isSelectMode ? 'cursor-pointer hover:scale-105' : ''}
+    ${isSelectMode ? 'cursor-pointer' : ''}
   `;
   
   // For visual selection feedback
@@ -88,7 +92,8 @@ export const ScrapNote: React.FC<ScrapNoteProps> = ({
   return (
     <motion.div
       drag={isDraggable}
-      dragMomentum={false}
+      dragMomentum={false} // Stops instantly when released
+      dragElastic={0} // No rubber banding, follows cursor exactly
       initial={isGrouped ? { opacity: 0, scale: 0.9 } : { 
         x: scrap.position.x, 
         y: scrap.position.y, 
@@ -104,10 +109,19 @@ export const ScrapNote: React.FC<ScrapNoteProps> = ({
         opacity: 1,
         zIndex: scrap.zIndex 
       }}
-      whileDrag={{ scale: 1.05, rotate: 0, zIndex: 9999 }}
+      // Use standard transition for non-drag properties, but instant for drag
+      transition={{
+         x: { type: "tween", duration: 0 }, // Instant X updates
+         y: { type: "tween", duration: 0 }, // Instant Y updates
+         default: { type: "spring", stiffness: 200, damping: 20 }
+      }}
+      whileDrag={{ scale: 1.05, rotate: 0, zIndex: 9999, transition: { duration: 0.1 } }}
       onDragEnd={(e, info) => {
         if (isDraggable && onUpdatePosition) {
-            onUpdatePosition(scrap.id, scrap.position.x + info.offset.x, scrap.position.y + info.offset.y);
+            // Correct the drag offset by the current zoom scale
+            const correctedX = info.offset.x / scale;
+            const correctedY = info.offset.y / scale;
+            onUpdatePosition(scrap.id, scrap.position.x + correctedX, scrap.position.y + correctedY);
         }
       }}
       onPointerDown={isSelectMode ? undefined : () => onFocus?.(scrap.id)}

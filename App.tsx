@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { nanoid } from 'nanoid';
-import { Brain, RotateCcw, Sparkles, AlertCircle, CheckSquare, FolderPlus, MousePointer2 } from 'lucide-react';
+import { Brain, RotateCcw, Sparkles, AlertCircle, CheckSquare, FolderPlus, MousePointer2, ZoomIn, ZoomOut, Move } from 'lucide-react';
 import { ScrapNote } from './components/ScrapNote';
 import { GroupNode } from './components/GroupNode';
 import { AddScrap } from './components/AddScrap';
@@ -16,6 +16,10 @@ const App: React.FC = () => {
   const [selectedScrapIds, setSelectedScrapIds] = useState<Set<string>>(new Set());
   const [synthesis, setSynthesis] = useState<IdeaSynthesis | null>(null);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
+  
+  // Viewport State for Infinite Canvas
+  const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
+  const [isPanning, setIsPanning] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Load from local storage
@@ -24,7 +28,6 @@ const App: React.FC = () => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Migration logic for old data format which was just Scrap[]
         if (Array.isArray(parsed)) {
             setScraps(parsed);
         } else {
@@ -56,10 +59,75 @@ const App: React.FC = () => {
     }
   }, [scraps]);
 
+  // --- Zoom & Pan Logic ---
+
+  const handleWheel = (e: React.WheelEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+        // Zoom
+        e.preventDefault();
+        const zoomSensitivity = 0.001;
+        const delta = -e.deltaY * zoomSensitivity;
+        const newScale = Math.min(Math.max(view.scale * Math.exp(delta), 0.1), 5);
+        
+        // Calculate mouse position relative to container
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (rect) {
+            // Mouse position on screen
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            
+            // Mouse position in "World" coordinates before zoom
+            const worldX = (mouseX - view.x) / view.scale;
+            const worldY = (mouseY - view.y) / view.scale;
+            
+            // Update view to keep world position under mouse
+            setView({
+                scale: newScale,
+                x: mouseX - worldX * newScale,
+                y: mouseY - worldY * newScale
+            });
+        }
+    } else {
+        // Pan
+        setView(prev => ({
+            ...prev,
+            x: prev.x - e.deltaX,
+            y: prev.y - e.deltaY
+        }));
+    }
+  };
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    // Only pan if clicking directly on the background
+    if (e.target === e.currentTarget || (e.target as HTMLElement).id === "board-background") {
+        e.preventDefault();
+        setIsPanning(true);
+        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (isPanning) {
+        e.preventDefault();
+        setView(prev => ({
+            ...prev,
+            x: prev.x + e.movementX,
+            y: prev.y + e.movementY
+        }));
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (isPanning) {
+        setIsPanning(false);
+        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    }
+  };
+
   const addScrap = (content: string, url: string, image?: string, tags?: string[], color?: string) => {
-    const rect = containerRef.current?.getBoundingClientRect();
-    const width = rect?.width || window.innerWidth;
-    const height = rect?.height || window.innerHeight;
+    // Determine position: Center of the current View
+    const centerX = (window.innerWidth / 2 - view.x) / view.scale;
+    const centerY = (window.innerHeight / 2 - view.y) / view.scale;
 
     const initialWidth = 250 + Math.random() * 50;
     const initialHeight = image 
@@ -74,7 +142,10 @@ const App: React.FC = () => {
       tags: tags,
       createdAt: Date.now(),
       lastReviewedAt: Date.now(),
-      position: getRandomPosition(width, height),
+      position: {
+          x: centerX - initialWidth / 2 + (Math.random() * 40 - 20),
+          y: centerY - initialHeight / 2 + (Math.random() * 40 - 20)
+      },
       rotation: getRandomRotation(),
       color: color || getRandomColor(),
       zIndex: getMaxZIndex() + 1,
@@ -95,6 +166,24 @@ const App: React.FC = () => {
   // --- Scrap Updates ---
 
   const updateScrapPosition = (id: string, x: number, y: number) => {
+    // Check for collision with groups (drag and drop to add to group)
+    const scrap = scraps.find(s => s.id === id);
+    if (scrap && !scrap.groupId) {
+      const hitGroup = groups.find(g => {
+        return (
+          x < g.position.x + g.width &&
+          x + scrap.width > g.position.x &&
+          y < g.position.y + g.height &&
+          y + scrap.height > g.position.y
+        );
+      });
+
+      if (hitGroup) {
+        setScraps(prev => prev.map(s => s.id === id ? { ...s, groupId: hitGroup.id } : s));
+        return;
+      }
+    }
+
     setScraps(prev => prev.map(s => 
       s.id === id ? { ...s, position: { x, y }, zIndex: getMaxZIndex() + 1 } : s
     ));
@@ -144,30 +233,28 @@ const App: React.FC = () => {
       height: 400
     };
 
-    // Assign group ID to scraps
     setScraps(prev => prev.map(s => 
         selectedScrapIds.has(s.id) ? { ...s, groupId: newGroup.id } : s
     ));
     setGroups(prev => [...prev, newGroup]);
     
-    // Reset selection and mode
     setSelectedScrapIds(new Set());
     setMode(AppMode.BOARD);
   };
 
-  const deleteGroup = (id: string) => {
-    // Ungroup all scraps in this group
+  const disbandGroup = (id: string) => {
     setScraps(prev => prev.map(s => 
         s.groupId === id ? { ...s, groupId: undefined } : s
     ));
     setGroups(prev => prev.filter(g => g.id !== id));
   };
 
+  const destroyGroup = (id: string) => {
+    setScraps(prev => prev.filter(s => s.groupId !== id));
+    setGroups(prev => prev.filter(g => g.id !== id));
+  };
+
   const ungroupScrap = (scrapId: string) => {
-    // Find the scrap to get its current group position?
-    // For simplicity, just pop it out to the board. 
-    // Ideally, we'd set its position near the group.
-    
     setScraps(prev => {
         const scrap = prev.find(s => s.id === scrapId);
         const group = groups.find(g => g.id === scrap?.groupId);
@@ -254,12 +341,15 @@ const App: React.FC = () => {
       {/* Top Bar */}
       <div className="absolute top-0 left-0 right-0 p-4 z-40 pointer-events-none flex justify-between items-start">
         <div className="pointer-events-auto">
-          <h1 className="text-4xl font-['Zen_Maru_Gothic'] font-bold text-gray-800 drop-shadow-sm tracking-wide">
+          <h1 className="text-4xl font-['Zen_Maru_Gothic'] font-bold text-gray-800 drop-shadow-sm tracking-wide select-none">
             ScrapMind
           </h1>
-          <p className="text-xs text-gray-500 font-mono mt-1">
+          <p className="text-xs text-gray-500 font-mono mt-1 select-none">
             {scraps.length} スクラップ / {groups.length} グループ
           </p>
+          <div className="mt-2 text-xs text-gray-400 font-mono select-none">
+             Scale: {Math.round(view.scale * 100)}%
+          </div>
         </div>
 
         <div className="flex gap-4 pointer-events-auto items-center">
@@ -311,45 +401,70 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Board Area */}
-      <div ref={containerRef} className="w-full h-full relative cursor-grab active:cursor-grabbing bg-transparent">
-        
-        {/* Render Loose Scraps (not in group) */}
-        {scraps.filter(s => !s.groupId).map(scrap => (
-          <ScrapNote
-            key={scrap.id}
-            scrap={scrap}
-            displayMode={mode === AppMode.SELECT ? 'SELECT' : 'BOARD'}
-            isSelected={selectedScrapIds.has(scrap.id)}
-            onUpdatePosition={updateScrapPosition}
-            onUpdateSize={updateScrapSize}
-            onDelete={deleteScrap}
-            onFocus={focusScrap}
-            onToggleSelect={toggleSelectScrap}
-          />
-        ))}
-
-        {/* Render Groups */}
-        {groups.map(group => (
-            <GroupNode
-                key={group.id}
-                group={group}
-                scraps={scraps.filter(s => s.groupId === group.id)}
-                onUpdatePosition={updateGroupPosition}
-                onUpdateSize={updateGroupSize}
-                onToggleCollapse={toggleGroupCollapse}
-                onUpdateTitle={updateGroupTitle}
-                onUngroupScrap={ungroupScrap}
-                onDeleteGroup={deleteGroup}
-                onFocus={focusGroup}
+      {/* Main Board Area (Infinite Canvas Wrapper) */}
+      <div 
+        ref={containerRef} 
+        className={`w-full h-full relative overflow-hidden bg-noise ${isPanning ? 'cursor-grabbing' : 'cursor-default'}`}
+        onWheel={handleWheel}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
+      >
+        {/* The World Content Layer */}
+        <div 
+            style={{
+                transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
+                transformOrigin: '0 0',
+                width: '100%',
+                height: '100%',
+                position: 'absolute',
+                top: 0,
+                left: 0
+            }}
+            id="board-background"
+        >
+            {/* Render Loose Scraps (not in group) */}
+            {scraps.filter(s => !s.groupId).map(scrap => (
+            <ScrapNote
+                key={scrap.id}
+                scrap={scrap}
+                displayMode={mode === AppMode.SELECT ? 'SELECT' : 'BOARD'}
+                isSelected={selectedScrapIds.has(scrap.id)}
+                scale={view.scale} // Pass Zoom Scale
+                onUpdatePosition={updateScrapPosition}
+                onUpdateSize={updateScrapSize}
+                onDelete={deleteScrap}
+                onFocus={focusScrap}
+                onToggleSelect={toggleSelectScrap}
             />
-        ))}
+            ))}
+
+            {/* Render Groups */}
+            {groups.map(group => (
+                <GroupNode
+                    key={group.id}
+                    group={group}
+                    scraps={scraps.filter(s => s.groupId === group.id)}
+                    scale={view.scale} // Pass Zoom Scale
+                    onUpdatePosition={updateGroupPosition}
+                    onUpdateSize={updateGroupSize}
+                    onToggleCollapse={toggleGroupCollapse}
+                    onUpdateTitle={updateGroupTitle}
+                    onUngroupScrap={ungroupScrap}
+                    onDisbandGroup={disbandGroup}
+                    onDeleteGroup={destroyGroup}
+                    onFocus={focusGroup}
+                />
+            ))}
+        </div>
 
         {scraps.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-30">
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-30 select-none">
             <div className="text-center">
                 <p className="font-['Zen_Kurenaido'] font-bold text-4xl text-gray-400 rotate-[-5deg]">何もないですね...</p>
                 <p className="font-['Zen_Maru_Gothic'] text-2xl text-gray-400 mt-4 rotate-[2deg]">紙をちぎって、何か書いてみましょう。</p>
+                <p className="text-sm text-gray-400 mt-8 font-mono">背景ドラッグで移動、ホイールでズーム</p>
             </div>
           </div>
         )}
@@ -377,7 +492,8 @@ const App: React.FC = () => {
           >
             <RotateCcw size={24} />
           </button>
-
+          
+          {/* Synthesis Content ... (same as before) */}
           <div className="max-w-2xl w-full">
             <div className="flex items-center gap-3 mb-6">
                <Sparkles className="text-purple-600" size={32} />
